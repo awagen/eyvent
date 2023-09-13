@@ -91,6 +91,12 @@ object AppProperties {
     // the partitioning for events
     val eventPartitioning: Partitioning =  baseConfig.getString("eyvent.events.partitioning").parseJson.convertTo[Partitioning]
 
+    val validGroups: Seq[String] = baseConfig.getString("eyvent.events.validGroups")
+      .split(",")
+      .map(x => x.trim.toUpperCase)
+      .filter(x => x.nonEmpty)
+    val acceptAllGroups = validGroups.contains("*")
+
   }
 
 }

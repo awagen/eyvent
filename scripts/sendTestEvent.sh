@@ -1,0 +1,1 @@
+curl -v -XPOST http://localhost:8081/event/test/group1 -d '{"name": "test1", "value": "yay", "optValue": "y"}'  --header "Content-Type: application/json"
