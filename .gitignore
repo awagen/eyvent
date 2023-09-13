@@ -3,3 +3,21 @@
 
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
+
+logs
+project/project
+project/target
+target/
+tmp
+.history
+/.idea
+/.github
+/*.iml
+/out
+/.idea_modules
+/.classpath
+/.project
+/RUNNING_PID
+/.settings
+public
+/tmp_data
