@@ -3,10 +3,13 @@ package de.awagen.eyvent.config
 import com.amazonaws.regions.Regions
 import com.typesafe.config.{Config, ConfigFactory}
 import de.awagen.eyvent.config.EnvVariableKeys.{HTTP_SERVER_PORT, PROFILE}
+import de.awagen.eyvent.config.NamingPatterns.Partitioning
+import de.awagen.eyvent.io.json.NamingPatternsJsonProtocol.PartitioningFormat
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.concurrent.duration._
 import scala.util.Random
+import spray.json._
 
 
 /**
@@ -82,9 +85,11 @@ object AppProperties {
 
     // node-hash to identify and distinguish claims and processing states from
     // distinct nodes
-    val node_hash: String = safeGetString("kolibri.nodeHash").getOrElse(
+    val node_hash: String = safeGetString("eyvent.nodeHash").getOrElse(
       Random.alphanumeric.take(6).mkString
     )
+    // the partitioning for events
+    val eventPartitioning: Partitioning =  baseConfig.getString("eyvent.events.partitioning").parseJson.convertTo[Partitioning]
 
   }
 

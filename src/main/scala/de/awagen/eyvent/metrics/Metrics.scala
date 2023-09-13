@@ -1,0 +1,210 @@
+package de.awagen.eyvent.metrics
+
+import de.awagen.eyvent.config.AppProperties
+import zio.metrics.MetricKeyType.Counter
+import zio.metrics.MetricState.Gauge
+import zio.metrics._
+import zio.{Chunk, Task, ZIO}
+
+import java.lang.management.ManagementFactory
+import java.time.temporal.ChronoUnit
+
+
+object Metrics {
+
+  object MetricTypes {
+    val taskManageCycleInvokeCount = Metric.counter("kolibri_task_manage_invoke_count")
+      .fromConst(1)
+  }
+
+  object CalculationsWithMetrics {
+
+    /**
+     * Effect to calculate memory usage.
+     *
+     * To set a gauge metric, can just prepend the effect with  '@@ Metric.gauge("kolibri_memory_usage")' or similar
+     */
+    def memoryUsage: ZIO[Any, Nothing, Double] = {
+      import java.lang.Runtime._
+      ZIO
+        .succeed(getRuntime.totalMemory() - getRuntime.freeMemory())
+        .map(_ / (1024.0 * 1024.0))
+    }
+
+    /**
+     * Regarding distinct jvm management beans and provided info:
+     * e.g https://www.baeldung.com/java-metrics
+     *
+     * To set gauge metric, can just prepend the effect with '@@ Metric.gauge("kolibri_avg_load")' or similar
+     */
+    def avgSystemLoad: ZIO[Any, Nothing, Double] = {
+      val bean = ManagementFactory.getOperatingSystemMXBean
+      ZIO.succeed(bean.getSystemLoadAverage)
+    }
+
+    def getAvailableProcessors: Task[Int] = {
+      ZIO.attempt(ManagementFactory.getOperatingSystemMXBean.getAvailableProcessors)
+    }
+
+    /**
+     * Initial usage: heap memory the JVM requests from the OS on startup
+     * Value given in MB
+     */
+    def getInitialHeapMemory: Task[Double] = {
+      ZIO.attempt({
+        ManagementFactory.getMemoryMXBean.getHeapMemoryUsage.getInit
+      }).map(_ / (1024.0 * 1024.0))
+    }
+
+    /**
+     * Value given in MB
+     */
+    def getInitialNonHeapMemory: Task[Double] = {
+      ZIO.attempt({
+        ManagementFactory.getMemoryMXBean.getNonHeapMemoryUsage.getInit
+      }).map(_ / (1024.0 * 1024.0))
+    }
+
+    /**
+     * Current non-heap memory used
+     * Value given in MB
+     */
+    def getUsedHeapMemory: Task[Double] = {
+      ZIO.attempt({
+        ManagementFactory.getMemoryMXBean.getHeapMemoryUsage.getUsed
+      }).map(_ / (1024.0 * 1024.0))
+    }
+
+    /**
+     * Value given in MB
+     */
+    def getUsedNonHeapMemory: Task[Double] = {
+      ZIO.attempt({
+        ManagementFactory.getMemoryMXBean.getNonHeapMemoryUsage.getUsed
+      }).map(_ / (1024.0 * 1024.0))
+    }
+
+    /**
+     * Heap memory guaranteed to be available to JVM.
+     * Value given in MB
+     */
+    def getCommittedHeapMemory: Task[Double] = {
+      ZIO.attempt({
+        ManagementFactory.getMemoryMXBean.getHeapMemoryUsage.getCommitted
+      }).map(_ / (1024.0 * 1024.0))
+    }
+
+    /**
+     * Value given in MB
+     */
+    def getCommittedNonHeapMemory: Task[Double] = {
+      ZIO.attempt({
+        ManagementFactory.getMemoryMXBean.getNonHeapMemoryUsage.getCommitted
+      }).map(_ / (1024.0 * 1024.0))
+    }
+
+    /**
+     * Max heap memory available to the JVM.
+     * Value given in MB.
+     */
+    def getMaxHeapMemory: Task[Double] = {
+      ZIO.attempt({
+        ManagementFactory.getMemoryMXBean.getHeapMemoryUsage.getMax
+      }).map(_ / (1024.0 * 1024.0))
+    }
+
+    /**
+     * Value given in MB.
+     */
+    def getMaxNonHeapMemory: Task[Double] = {
+      ZIO.attempt({
+        ManagementFactory.getMemoryMXBean.getNonHeapMemoryUsage.getMax
+      }).map(_ / (1024.0 * 1024.0))
+    }
+
+    /**
+     * Counter for elements flowing through processing queue.
+     */
+    def countProcessingQueueFlowElements(in: Boolean): Metric[Counter, Any, MetricState.Counter] =
+      Metric.counterInt("countProcessingQueueFlowElements").fromConst(1)
+        .tagged(
+          MetricLabel("in", in.toString),
+          MetricLabel("node", AppProperties.config.node_hash)
+        )
+
+    /**
+     * Gauge for processing queue size
+     */
+    def gaugeProcessingQueueSize(jobId: String, batchNr: Int): Metric[MetricKeyType.Gauge, Double, Gauge] =
+      Metric.gauge("gaugeProcessingQueueSize")
+        .tagged(
+          MetricLabel("jobId", jobId),
+          MetricLabel("batchNr", batchNr.toString),
+          MetricLabel("node", AppProperties.config.node_hash)
+        )
+
+    /**
+     * Counter for elements flowing through certain stage.
+     */
+    def countFlowElements(stage: String, in: Boolean): Metric[Counter, Any, MetricState.Counter] =
+      Metric.counterInt("countFlowElements").fromConst(1)
+        .tagged(
+          MetricLabel("stage", stage),
+          MetricLabel("in", in.toString),
+          MetricLabel("node", AppProperties.config.node_hash)
+        )
+
+    /**
+     * Counter for requests to API endpoints provided by the service.
+     */
+    def countAPIRequestsWithStatus(method: String,
+                                   handler: String,
+                                   group: String,
+                                   success: Boolean): Metric[Counter, Any, MetricState.Counter] =
+      Metric.counterInt(s"countApiRequests").fromConst(1)
+        .tagged(
+          MetricLabel("group", group),
+          MetricLabel("success", success.toString),
+          MetricLabel("method", method),
+          MetricLabel("handler", handler),
+          MetricLabel("node", AppProperties.config.node_hash)
+        )
+
+    def methodInvocations(method: String): Metric[Counter, Any, MetricState.Counter] =
+      Metric.counterInt("methodInvocations").fromConst(1)
+        .tagged(
+          MetricLabel("method", method),
+          MetricLabel("node", AppProperties.config.node_hash)
+        )
+
+    /**
+     * Counter for client requests to external services.
+     */
+    def countExternalRequests(method: String, host: String, contextPath: String, responseCode: Int): Metric[Counter, Any, MetricState.Counter] =
+      Metric.counterInt("countClientRequests").fromConst(1)
+        .tagged(
+          MetricLabel("method", method),
+          MetricLabel("host", host),
+          MetricLabel("contextPath", contextPath),
+          MetricLabel("responseCode", responseCode.toString),
+          MetricLabel("node", AppProperties.config.node_hash)
+        )
+
+    def externalRequestTimer(method: String, host: String, contextPath: String): Metric[MetricKeyType.Histogram, zio.Duration, MetricState.Histogram] =
+      Metric.timer(
+        name = "externalRequestTimer",
+        chronoUnit = ChronoUnit.MILLIS,
+        boundaries = Chunk.fromIterable(Seq(2.0, 5.0)) ++ Chunk.iterate(10.0, 100)(_ + 20.0)
+      ).tagged(
+        MetricLabel("method", method),
+        MetricLabel("host", host),
+        MetricLabel("contextPath", contextPath),
+        MetricLabel("node", AppProperties.config.node_hash)
+      )
+  }
+
+
+
+
+
+}
