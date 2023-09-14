@@ -1,15 +1,20 @@
 package de.awagen.eyvent
 
-import de.awagen.eyvent.config.AppProperties.config.{appBlockingPoolThreads, appNonBlockingPoolThreads, http_server_port}
+import de.awagen.eyvent.config.AppProperties.config.{appBlockingPoolThreads, appNonBlockingPoolThreads, eventEndpointToStructDefMapping, http_server_port, structDefSubFolder}
 import de.awagen.eyvent.config.HttpConfig
 import de.awagen.eyvent.config.di.ZioDIConfig
 import de.awagen.eyvent.endpoints.EventEndpoints._
 import de.awagen.eyvent.endpoints.MetricEndpoints
+import de.awagen.kolibri.datatypes.io.json.JsonStructDefsJsonProtocol.lazyJsonStructDefsFormat
+import de.awagen.kolibri.datatypes.types.JsonStructDefs.{NestedStructDef, StructDef}
+import de.awagen.kolibri.storage.io.reader.Reader
 import zio.http.Server
 import zio.logging.backend.SLF4J
 import zio.metrics.connectors.{MetricsConfig, prometheus}
 import zio.metrics.jvm.DefaultJvmMetrics
 import zio.{Executor, Queue, Runtime, Scope, ZIO, ZIOAppArgs, ZIOAppDefault, ZLayer, durationInt}
+import spray.json._
+import zio.stream.ZStream
 
 import java.util.concurrent.Executors
 
@@ -40,10 +45,19 @@ object App extends ZIOAppDefault {
   override def run: ZIO[Any with ZIOAppArgs with Scope, Any, Any] = {
     val effect = for {
       _ <- ZIO.logInfo("Application started!")
-      testEventQueue <- Queue.unbounded[Event]
+      reader <- ZIO.service[Reader[String, Seq[String]]]
+      usedEndpoints <- ZStream.fromIterable(eventEndpointToStructDefMapping.toSeq)
+        .mapZIO(x => {
+          for {
+            structDef <- ZIO.attempt(reader.read("$structDefSubFolder/${x._2}").mkString("\n").parseJson.convertTo[StructDef[Any]].asInstanceOf[NestedStructDef[Any]])
+            eventQueue <- Queue.unbounded[Event]
+            endpoint <- ZIO.attempt(eventEndpoint(x._1, structDef, eventQueue))
+          } yield endpoint
+        }).runCollect
       _ <- zio.http.Server.serve(
-        MetricEndpoints.prometheusEndpoint ++
-          eventEndpoint("test", sampleStructDef, testEventQueue)
+        usedEndpoints.foldLeft(MetricEndpoints.prometheusEndpoint)((oldEndpoints, newEndpoint) => {
+          oldEndpoints ++ newEndpoint
+        })
       )
       _ <- ZIO.logInfo("Application is about to exit!")
     } yield ()

@@ -10,6 +10,11 @@ It provides configuration options to both partition by group as well as file siz
 Further, it provides additional "flush-criteria" that determine when a new event file is written to the storage.
 
 
+## Building, testing, assembly, docker image
+- recompile and test: `sbt clean test`
+- building jar within target/scala-2.13/: `sbt assembly`
+- creating docker image: `docker build . -t eyvent:0.0.1`
+
 ## Defining accepted json formats for single endpoints
 
 First of all, you need to define the format of the expected events for each endpoint

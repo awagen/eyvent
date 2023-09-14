@@ -1,0 +1,52 @@
+version: '3.5'
+
+services:
+
+  eyvent-1:
+    image: eyvent:0.0.1
+    deploy:
+      # NOTE: you will need to adjust those limits to your setup
+      resources:
+        limits:
+          cpus: '4'
+          memory: 3gb
+    ports:
+      - "6001:6001"
+    user: "1000:1000"
+    environment:
+      JVM_OPTS: >
+        -XX:+UseG1GC
+        -Xms2048m
+        -Xmx2048m
+      NODE_HASH: "abc1"
+      HTTP_SERVER_PORT: 6001
+      PERSISTENCE_MODE: 'LOCAL'
+      # AWS_PROFILE: 'developer'
+      # AWS_S3_BUCKET: 'kolibri-dev'
+      # AWS_S3_PATH: 'kolibri_fleet_zio_test'
+      # AWS_S3_REGION: 'EU_CENTRAL_1'
+      # GCP settings
+      # PERSISTENCE_MODE: 'GCP'
+      # GOOGLE_APPLICATION_CREDENTIALS: '/home/kolibri/gcp/kolibri-credentials.json'
+      # GCP_GS_BUCKET: '[your-bucket-name]'
+      # GCP_GS_PATH: '[your-bucket-base-path]'
+      # GCP_GS_PROJECT_ID: '[your-project-id]'
+      # the file path in the job definitions are to be given relative to the path (or bucket path) defined
+      # for the respective configuration of persistence
+      LOCAL_STORAGE_WRITE_BASE_PATH: '/app/examples'
+      LOCAL_STORAGE_READ_BASE_PATH: '/app/examples'
+      # we need a fraction of threads for the blocking thread pool for stuff like file system IO
+      # yet the majority of computation is async, thus we assign majority of available threads
+      # (assuming 1 thread, 1 core).
+      BLOCKING_POOL_THREADS: 4
+      NON_BLOCKING_POOL_THREADS: 8
+      STRUCT_DEF_SUB_FOLDER: "eventStructDefs"
+      EVENT_STORAGE_SUB_FOLDER: "events"
+    volumes:
+      - ./examples:/app/examples
+      # mount only needed in case you want to use PERSISTENCE_MODE 'AWS' (adjust the mounted folder from local
+      # to folder where credentials are located)
+      - ${HOME}/.aws/credentials:/home/kolibri/.aws/credentials:ro
+      # mount only needed in case you want to use PERSISTENCE_MODE 'GCP' (adjust the mounted folder from local
+      # to folder where credentials are located)
+      - ${HOME}/Clouds/gcp:/home/kolibri/gcp:ro

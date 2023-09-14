@@ -97,6 +97,16 @@ object AppProperties {
       .filter(x => x.nonEmpty)
     val acceptAllGroups = validGroups.contains("*")
 
+    val structDefSubFolder: String = baseConfig.getString("eyvent.events.structDefSubFolder")
+    val eventStorageSubFolder: String = baseConfig.getString("eyvent.events.eventStorageSubFolder")
+
+    // mapping of endpoint ids to files providing the struct def defining the
+    // format of accepted events.
+    // Note that the struct def file with the given name is to be found within
+    // basePath/structDefSubFolder
+    val eventEndpointToStructDefMapping: Map[String, String] = baseConfig.getString("eyvent.events.eventEndpointToStructDefMapping")
+      .split(",").map(x => x.trim).grouped(2).map(x => (x.head, x.last)).toMap
+
   }
 
 }

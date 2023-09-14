@@ -1,0 +1,50 @@
+{
+  "type": "NESTED",
+  "fields": [
+    {
+      "nameFormat": {
+        "type": "STRING_CONSTANT",
+        "value": "id"
+      },
+      "required": true,
+      "valueFormat": {
+        "type": "REGEX",
+        "regex": ".+"
+      }
+    },
+    {
+      "nameFormat": {
+        "type": "STRING_CONSTANT",
+        "value": "type"
+      },
+      "required": true,
+      "valueFormat": {
+        "type": "CHOICE_STRING",
+        "choices": [
+          "click",
+          "add2cart",
+          "search"
+        ]
+      }
+    }
+  ],
+  "conditionalFieldsSeq": [
+    {
+      "conditionFieldId": "type",
+      "mapping": {
+        "search": [
+          {
+            "nameFormat": {
+              "type": "STRING_CONSTANT",
+              "value": "query"
+            },
+            "required": true,
+            "valueFormat": {
+              "type": "STRING"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
