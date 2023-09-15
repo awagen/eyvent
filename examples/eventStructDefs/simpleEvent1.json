@@ -10,7 +10,8 @@
       "valueFormat": {
         "type": "REGEX",
         "regex": ".+"
-      }
+      },
+      "description": "Id for the current event."
     },
     {
       "nameFormat": {
@@ -25,7 +26,8 @@
           "add2cart",
           "search"
         ]
-      }
+      },
+      "description": "Event type."
     }
   ],
   "conditionalFieldsSeq": [
@@ -41,7 +43,56 @@
             "required": true,
             "valueFormat": {
               "type": "STRING"
-            }
+            },
+            "description": "Query for the search event."
+          }
+        ],
+        "click": [
+          {
+            "nameFormat": {
+              "type": "STRING_CONSTANT",
+              "value": "position"
+            },
+            "required": true,
+            "valueFormat": {
+              "type": "INT"
+            },
+            "description": "Position where the click event happened."
+          },
+          {
+            "nameFormat": {
+              "type": "STRING_CONSTANT",
+              "value": "productId"
+            },
+            "required": true,
+            "valueFormat": {
+              "type": "STRING"
+            },
+            "description": "ProductId of the clicked product."
+          }
+        ],
+        "add2cart": [
+          {
+            "nameFormat": {
+              "type": "STRING_CONSTANT",
+              "value": "position"
+            },
+            "required": true,
+            "valueFormat": {
+              "type": "INT"
+            },
+            "description": "Position where the add2cart event happened."
+          },
+          {
+            "nameFormat": {
+              "type": "STRING_CONSTANT",
+              "value": "productId"
+            },
+            "required": true,
+            "valueFormat": {
+              "type": "STRING"
+            },
+            "description": "ProductId of the product added to cart."
           }
         ]
       }

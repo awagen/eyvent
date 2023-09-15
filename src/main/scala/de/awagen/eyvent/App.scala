@@ -46,14 +46,16 @@ object App extends ZIOAppDefault {
     val effect = for {
       _ <- ZIO.logInfo("Application started!")
       reader <- ZIO.service[Reader[String, Seq[String]]]
+      _ <- ZIO.logInfo("Loading event endpoints")
       usedEndpoints <- ZStream.fromIterable(eventEndpointToStructDefMapping.toSeq)
         .mapZIO(x => {
           for {
-            structDef <- ZIO.attempt(reader.read("$structDefSubFolder/${x._2}").mkString("\n").parseJson.convertTo[StructDef[Any]].asInstanceOf[NestedStructDef[Any]])
+            structDef <- ZIO.attempt(reader.read(s"$structDefSubFolder/${x._2}").mkString("\n").parseJson.convertTo[StructDef[Any]].asInstanceOf[NestedStructDef[Any]])
             eventQueue <- Queue.unbounded[Event]
             endpoint <- ZIO.attempt(eventEndpoint(x._1, structDef, eventQueue))
           } yield endpoint
         }).runCollect
+      _ <- ZIO.logInfo("Loaded event endpoints")
       _ <- zio.http.Server.serve(
         usedEndpoints.foldLeft(MetricEndpoints.prometheusEndpoint)((oldEndpoints, newEndpoint) => {
           oldEndpoints ++ newEndpoint

@@ -1,10 +1,10 @@
 import sbt.Keys._
 
-val sl4jApiVersion = "2.0.5"
+val sl4jApiVersion = "2.0.9"
 val scalaTestVersion = "3.2.15"
 val scalaMockVersion = "5.2.0"
 val shapelessVersion = "2.3.10"
-val logbackVersion = "1.4.7"
+val logbackVersion = "1.4.11"
 val macwireVersion = "2.5.8"
 val scalacScoverageRuntimeVersion = "1.4.9"
 val testcontainersVersion = "1.17.6"

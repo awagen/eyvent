@@ -58,7 +58,7 @@ object EventEndpoints {
             ZIO.succeed(Response.json(ResponseContent(false, s"Group '$group' not valid, ignoring event").toJson.toString())) @@ countAPIRequestsWithStatus("POST", s"/event/$eventType", "IGNORED", success = false)
         }
       } yield response.get).catchAll(throwable =>
-        (ZIO.logWarning(s"Error on posting event:\n$throwable")
+        (ZIO.logWarning(s"""Error on posting event:\nexception: $throwable\ntrace: ${throwable.getStackTrace.mkString("\n")}""")
           *> ZIO.succeed(Response.json(ResponseContent(false, s"Failed posting task").toJson.toString()).withStatus(Status.InternalServerError)))
           @@ countAPIRequestsWithStatus("POST", s"/event/$eventType", group, success = false)
       )

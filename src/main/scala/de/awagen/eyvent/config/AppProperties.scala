@@ -2,7 +2,7 @@ package de.awagen.eyvent.config
 
 import com.amazonaws.regions.Regions
 import com.typesafe.config.{Config, ConfigFactory}
-import de.awagen.eyvent.config.EnvVariableKeys.{HTTP_SERVER_PORT, PROFILE}
+import de.awagen.eyvent.config.EnvVariableKeys.{PROFILE}
 import de.awagen.eyvent.config.NamingPatterns.Partitioning
 import de.awagen.eyvent.io.json.NamingPatternsJsonProtocol.PartitioningFormat
 import org.slf4j.{Logger, LoggerFactory}
@@ -40,7 +40,7 @@ object AppProperties {
 
     val baseConfig: Config = loadConfig(profile)
 
-    val http_server_port: Int = HTTP_SERVER_PORT.value.toInt
+    val http_server_port: Int = baseConfig.getInt("eyvent.port")
 
     def safeGetString(path: String): Option[String] = {
       if (baseConfig.hasPath(path)) Some(baseConfig.getString(path))
