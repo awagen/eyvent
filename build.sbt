@@ -122,6 +122,7 @@ val additionalDependencies = Seq(
   "org.testcontainers" % "localstack" % testcontainersVersion % Test,
   "dev.zio" %% "zio" % zioVersion,
   "dev.zio" %% "zio-streams" % zioVersion,
+  "dev.zio" %% "zio-concurrent" % zioVersion,
   "dev.zio" %% "zio-http" % zioHttpVersion,
   "dev.zio" %% "zio-json" % zioJsonVersion,
   "dev.zio" %% "zio-cache" % zioCacheVersion,

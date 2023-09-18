@@ -5,6 +5,8 @@ import spray.json.JsObject
 
 object NamingPatterns {
 
+  case class PartitionDef(partitionId: String, group: String, timeCreatedInMillis: Long)
+
   trait Partition {
 
     def partition: JsObject => String
