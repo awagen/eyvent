@@ -1,7 +1,7 @@
 package de.awagen.eyvent
 
 import de.awagen.eyvent.config.AppProperties.config.{appBlockingPoolThreads, appNonBlockingPoolThreads, eventEndpointToStructDefMapping, http_server_port, structDefSubFolder}
-import de.awagen.eyvent.config.HttpConfig
+import de.awagen.eyvent.config.{HttpConfig, NamingPatterns}
 import de.awagen.eyvent.config.di.ZioDIConfig
 import de.awagen.eyvent.endpoints.EventEndpoints._
 import de.awagen.eyvent.endpoints.MetricEndpoints
@@ -15,6 +15,11 @@ import zio.metrics.jvm.DefaultJvmMetrics
 import zio.{Executor, Queue, Runtime, Scope, ZIO, ZIOAppArgs, ZIOAppDefault, ZLayer, durationInt}
 import spray.json._
 import zio.stream.ZStream
+import de.awagen.eyvent.collections.{Conditions, EventStoreManager}
+import de.awagen.eyvent.collections.Queueing.{FlushingStore, MEMORY_SIZE_IN_MB_MEASURE_ID, NUM_ELEMENTS_MEASURE_ID}
+import de.awagen.eyvent.config.NamingPatterns.PartitionDef
+import de.awagen.kolibri.storage.io.writer.Writers.Writer
+import zio.stm.{STM, TRef}
 
 import java.util.concurrent.Executors
 
@@ -46,13 +51,34 @@ object App extends ZIOAppDefault {
     val effect = for {
       _ <- ZIO.logInfo("Application started!")
       reader <- ZIO.service[Reader[String, Seq[String]]]
+      writer <- ZIO.service[Writer[String, String, _]]
       _ <- ZIO.logInfo("Loading event endpoints")
+
+      map <- STM.atomically(TRef.make(Map.empty[PartitionDef, FlushingStore[JsObject]]))
+      groupToPartitionDef <- STM.atomically(TRef.make(Map.empty[String, PartitionDef]))
+      toBeFlushed <- STM.atomically(TRef.make(Set.empty[FlushingStore[JsObject]]))
+      eventStoreManager <- ZIO.attempt(EventStoreManager(
+        NamingPatterns.SequentialPartitioning[Long](Seq(
+          NamingPatterns.ByYearPartition,
+          NamingPatterns.ByMonthOfYearPartition,
+          NamingPatterns.ByDayOfMonthPartition,
+          NamingPatterns.ByHourOfDayPartition
+        ),
+          partitionSeparator = "/"),
+        map,
+        groupToPartitionDef,
+        Conditions.orCondition(Seq(
+          Conditions.doubleGEQCondition[String](2, MEMORY_SIZE_IN_MB_MEASURE_ID),
+          Conditions.intGEQCondition[String](1000, NUM_ELEMENTS_MEASURE_ID)
+        )),
+        toBeFlushed,
+        writer
+      ))
       usedEndpoints <- ZStream.fromIterable(eventEndpointToStructDefMapping.toSeq)
         .mapZIO(x => {
           for {
             structDef <- ZIO.attempt(reader.read(s"$structDefSubFolder/${x._2}").mkString("\n").parseJson.convertTo[StructDef[Any]].asInstanceOf[NestedStructDef[Any]])
-            eventQueue <- Queue.unbounded[Event]
-            endpoint <- ZIO.attempt(eventEndpoint(x._1, structDef, eventQueue))
+            endpoint <- ZIO.attempt(eventEndpoint(x._1, structDef, eventStoreManager))
           } yield endpoint
         }).runCollect
       _ <- ZIO.logInfo("Loaded event endpoints")

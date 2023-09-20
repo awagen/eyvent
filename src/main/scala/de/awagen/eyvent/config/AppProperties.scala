@@ -2,9 +2,9 @@ package de.awagen.eyvent.config
 
 import com.amazonaws.regions.Regions
 import com.typesafe.config.{Config, ConfigFactory}
-import de.awagen.eyvent.config.EnvVariableKeys.{PROFILE}
+import de.awagen.eyvent.config.EnvVariableKeys.PROFILE
 import de.awagen.eyvent.config.NamingPatterns.Partitioning
-import de.awagen.eyvent.io.json.NamingPatternsJsonProtocol.PartitioningFormat
+import de.awagen.eyvent.io.json.NamingPatternsJsonProtocol.LongPartitioningFormat
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.concurrent.duration._
@@ -89,7 +89,7 @@ object AppProperties {
       Random.alphanumeric.take(6).mkString
     )
     // the partitioning for events
-    val eventPartitioning: Partitioning =  baseConfig.getString("eyvent.events.partitioning").parseJson.convertTo[Partitioning]
+    val eventPartitioning: Partitioning[Long] =  baseConfig.getString("eyvent.events.partitioning").parseJson.convertTo[Partitioning[Long]]
 
     val validGroups: Seq[String] = baseConfig.getString("eyvent.events.validGroups")
       .split(",")

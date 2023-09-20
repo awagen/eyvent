@@ -1,6 +1,7 @@
 package de.awagen.eyvent.endpoints
 
-import de.awagen.eyvent.config.AppProperties.config.{acceptAllGroups, eventPartitioning, validGroups}
+import de.awagen.eyvent.collections.EventStoreManager
+import de.awagen.eyvent.config.AppProperties.config.{acceptAllGroups, validGroups}
 import de.awagen.eyvent.config.HttpConfig.corsConfig
 import de.awagen.eyvent.endpoints.Responses.ResponseContent
 import de.awagen.eyvent.endpoints.Responses.ResponseContentProtocol.responseContentFormat
@@ -11,12 +12,9 @@ import spray.json.DefaultJsonProtocol._
 import spray.json._
 import zio.http.HttpAppMiddleware.cors
 import zio.http._
-import zio.{Queue, Task, ZIO}
+import zio.{Task, ZIO}
 
 
-// TODO: we do have the endpoints defined below which place events in queues, yet need to define the
-// consume process. Group events per partition identifier and handle rollover for all partial files. Also keep
-// the node hash within the file names to avoid collision between distinct nodes
 object EventEndpoints {
 
   case class Event(eventType: String, payload: JsObject, timePlacedInMillis: Long, partitionId: String)
@@ -27,12 +25,12 @@ object EventEndpoints {
    */
   private[endpoints] def handleEventBody(req: Request,
                                          eventStructDef: NestedStructDef[Any],
-                                         eventType: String,
-                                         eventQueue: Queue[Event]): Task[Response] = for {
+                                         group: String,
+                                         eventStoreManager: EventStoreManager): Task[Response] = for {
     jsonObj <- req.body.asString.map(x => x.parseJson.asJsObject)
     // validate by the passed structural definition
     _ <- ZIO.attempt(eventStructDef.cast(jsonObj))
-    _ <- eventQueue.offer(Event(eventType, jsonObj, System.currentTimeMillis(), eventPartitioning.partition.apply(jsonObj)))
+    _ <- eventStoreManager.offer(jsonObj, group)
     // compose response
     response <- ZIO.succeed(Response.json(ResponseContent(true, "").toJson.toString()))
   } yield response
@@ -46,14 +44,14 @@ object EventEndpoints {
    */
   def eventEndpoint(typeOfEvent: String,
                     eventStructDef: NestedStructDef[Any],
-                    eventQueue: Queue[Event]) = Http.collectZIO[Request] {
+                    eventStoreManager: EventStoreManager) = Http.collectZIO[Request] {
     case req@Method.POST -> Root / "event" / eventType / group if eventType == typeOfEvent =>
       (for {
         // check whether either group wildcard is configured or the group is known, otherwise ignore the event
         _ <- ZIO.logInfo(s"Received event for group '$group'")
         shouldHandleEvent <- ZIO.succeed(acceptAllGroups || validGroups.contains(group.toUpperCase))
         response <- ZIO.whenCase(shouldHandleEvent) {
-          case true => handleEventBody(req, eventStructDef, eventType, eventQueue) @@ countAPIRequestsWithStatus("POST", s"/event/$eventType", group, success = true)
+          case true => handleEventBody(req, eventStructDef, group, eventStoreManager) @@ countAPIRequestsWithStatus("POST", s"/event/$eventType", group, success = true)
           case false =>
             ZIO.succeed(Response.json(ResponseContent(false, s"Group '$group' not valid, ignoring event").toJson.toString())) @@ countAPIRequestsWithStatus("POST", s"/event/$eventType", "IGNORED", success = false)
         }
@@ -66,9 +64,9 @@ object EventEndpoints {
 
   val sampleStructDef = NestedFieldSeqStructDef(
     Seq(
-      FieldDefinitions.FieldDef(StringConstantStructDef("name"), StringStructDef, true),
-      FieldDefinitions.FieldDef(StringConstantStructDef("value"), StringStructDef, true),
-      FieldDefinitions.FieldDef(StringConstantStructDef("optValue"), StringStructDef, false)
+      FieldDefinitions.FieldDef(StringConstantStructDef("name"), StringStructDef, required = true),
+      FieldDefinitions.FieldDef(StringConstantStructDef("value"), StringStructDef, required = true),
+      FieldDefinitions.FieldDef(StringConstantStructDef("optValue"), StringStructDef, required = false)
     ),
     Seq.empty
   )
