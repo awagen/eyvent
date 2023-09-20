@@ -63,10 +63,14 @@ object Queueing {
      */
     override def flush: Task[Unit] = for {
       flushContent <- resultCollector(store)
-      writeResult <- ZIO.attemptBlockingIO({
-        val identifier = s"""${AppProperties.config.eventStorageSubFolder.stripSuffix("/")}/${partitionDef.group}/${partitionDef.partitionId.stripSuffix("/")}/events-${AppProperties.config.node_hash}-${partitionDef.timeCreatedInMillis.toString}"""
-        writer.write(flushContent, identifier)
-      })
+      // only flush if there is something to flush
+      writeResult <- ZIO.ifZIO(ZIO.succeed(flushContent.trim.nonEmpty))(
+        onTrue = ZIO.attemptBlockingIO({
+          val identifier = s"""${AppProperties.config.eventStorageSubFolder.stripSuffix("/")}/${partitionDef.group}/${partitionDef.partitionId.stripSuffix("/")}/events-${AppProperties.config.node_hash}-${partitionDef.timeCreatedInMillis.toString}"""
+          writer.write(flushContent, identifier)
+        }),
+        onFalse = ZIO.succeed(Right(()))
+      )
       _ <- ZIO.fromEither(writeResult)
     } yield ()
   }
