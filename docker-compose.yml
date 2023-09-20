@@ -8,7 +8,7 @@ services:
       # NOTE: you will need to adjust those limits to your setup
       resources:
         limits:
-          cpus: '4'
+          cpus: '6'
           memory: 3gb
     ports:
       - "6001:6001"
@@ -38,8 +38,8 @@ services:
       # we need a fraction of threads for the blocking thread pool for stuff like file system IO
       # yet the majority of computation is async, thus we assign majority of available threads
       # (assuming 1 thread, 1 core).
-      BLOCKING_POOL_THREADS: 4
-      NON_BLOCKING_POOL_THREADS: 8
+      BLOCKING_POOL_THREADS: 2
+      NON_BLOCKING_POOL_THREADS: 4
       STRUCT_DEF_SUB_FOLDER: "eventStructDefs"
       EVENT_STORAGE_SUB_FOLDER: "events"
     volumes:
