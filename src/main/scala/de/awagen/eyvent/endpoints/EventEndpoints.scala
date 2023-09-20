@@ -67,7 +67,6 @@ object EventEndpoints {
     case req@Method.POST -> Root / "event" / eventType / group if eventType == typeOfEvent =>
       (for {
         // check whether either group wildcard is configured or the group is known, otherwise ignore the event
-        _ <- ZIO.logInfo(s"Received event for group '$group'")
         shouldHandleEvent <- ZIO.succeed(acceptAllGroups || validGroups.contains(group.toUpperCase))
         response <- ZIO.whenCase(shouldHandleEvent) {
           case true => handleEventBody(req, eventStructDef, group, eventStoreManager) @@ countAPIRequestsWithStatus("POST", s"/event/$eventType", group, success = true)

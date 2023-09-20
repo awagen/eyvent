@@ -170,10 +170,6 @@ case class EventStoreManager(fromTimeInMillisFolderPartitioning: Partitioning[Lo
       partitionDef <- STM.atomically(groupToPartitionDef.get.map(x => x(group)))
       store <- STM.atomically(map.get.map(x => x.get(partitionDef))).map(x => x.get)
       _ <- store.offer(event)
-      storesToBeFlushed <- STM.atomically(toBeFlushed.get)
-      _ <- ZIO.ifZIO(ZIO.succeed(storesToBeFlushed.nonEmpty))(
-        onTrue = ZIO.logInfo(s"Stores to be flushed: $storesToBeFlushed"),
-        onFalse = ZIO.succeed(()))
     } yield ()
   }
 
