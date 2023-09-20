@@ -11,6 +11,12 @@ Further, it provides additional "flush-criteria" that determine when a new event
 
 
 ## Building, testing, assembly, docker image
+NOTE: you will only be able to build the project if you locally publish
+`kolibri-storage`, which is to be found in the project 
+`https://github.com/awagen/kolibri`. Release of the jar to public repo is planned.
+In the meantime you can do so in the root-folder of the above kolibri-project with
+`sbt kolibri-storage/publishLocal`.
+
 - recompile and test: `sbt clean test`
 - building jar within target/scala-2.13/: `sbt assembly`
 - creating docker image: `docker build . -t eyvent:0.0.1`
