@@ -26,20 +26,22 @@ object EventEndpoints {
   private[endpoints] def handleEventBody(req: Request,
                                          eventStructDef: NestedStructDef[Any],
                                          group: String,
-                                         eventStoreManager: EventStoreManager): Task[Response] = for {
-    jsonObj <- req.body.asString.map(x => x.parseJson.asJsObject)
-    // validate by the passed structural definition
-    _ <- ZIO.attempt(eventStructDef.cast(jsonObj))
-    _ <- eventStoreManager.offer(jsonObj, group)
-    // compose response
-    response <- ZIO.succeed(Response.json(ResponseContent(true, "").toJson.toString()))
-  } yield response
+                                         eventStoreManager: EventStoreManager): ZIO[Any, Serializable, Response] = {
+    for {
+      jsonObj <- req.body.asString.map(x => x.parseJson.asJsObject)
+      // validate by the passed structural definition
+      _ <- ZIO.attempt(eventStructDef.cast(jsonObj))
+      _ <- eventStoreManager.offer(jsonObj, group)
+      // compose response
+      response <- ZIO.succeed(Response.json(ResponseContent(true, "").toJson.toString()))
+    } yield response
+  }
 
   /**
    * Configure an event posting endpoint where the passed payload is validated against the
    * passed structDef (description how the json is supposed to look, e.g which fields, which type)
    *
-   * @param eventType - name of the event type
+   * @param eventType      - name of the event type
    * @param eventStructDef - the structural description how a payload is supposed to look
    */
   def eventEndpoint(typeOfEvent: String,
@@ -56,7 +58,7 @@ object EventEndpoints {
             ZIO.succeed(Response.json(ResponseContent(false, s"Group '$group' not valid, ignoring event").toJson.toString())) @@ countAPIRequestsWithStatus("POST", s"/event/$eventType", "IGNORED", success = false)
         }
       } yield response.get).catchAll(throwable =>
-        (ZIO.logWarning(s"""Error on posting event:\nexception: $throwable\ntrace: ${throwable.getStackTrace.mkString("\n")}""")
+        (ZIO.logWarning(s"""Error on posting event:\nexception = $throwable""")
           *> ZIO.succeed(Response.json(ResponseContent(false, s"Failed posting task").toJson.toString()).withStatus(Status.InternalServerError)))
           @@ countAPIRequestsWithStatus("POST", s"/event/$eventType", group, success = false)
       )

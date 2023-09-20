@@ -39,7 +39,7 @@ object Measures {
 
     def update(element: A): Unit
 
-    def value: B
+    def value(): B
 
   }
 
@@ -51,7 +51,7 @@ object Measures {
       currentValue = updateFunc(element, currentValue)
     }
 
-    override def value: B = currentValue
+    override def value(): B = currentValue
   }
 
   /**

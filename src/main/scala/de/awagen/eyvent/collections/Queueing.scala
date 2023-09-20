@@ -50,23 +50,27 @@ object Queueing {
     )
 
     override def offer(elements: ElementType*): Task[Unit] = for {
+      _ <- ZIO.logInfo(s"Elements offered to store: $elements")
+      _ <- ZIO.logInfo(s"Current partitioning: $partitionDef")
       _ <- ZStream.fromIterable(elements)
         .foreach(el => {
           val stringified = stringifier(el)
           addEffect(store, stringified) *>
             ZStream.fromIterable(measures.values).foreach(measure => ZIO.attempt(measure.update(stringified)))
         })
+      _ <- ZIO.logInfo(s"Current measures: ${this.measures}")
     } yield ()
 
     /**
      * Flush content (e.g to persistence).
      */
     override def flush: Task[Unit] = for {
+      _ <- ZIO.logInfo(s"Flushing file for partition: $partitionDef")
       flushContent <- resultCollector(store)
       // only flush if there is something to flush
       writeResult <- ZIO.ifZIO(ZIO.succeed(flushContent.trim.nonEmpty))(
         onTrue = ZIO.attemptBlockingIO({
-          val identifier = s"""${AppProperties.config.eventStorageSubFolder.stripSuffix("/")}/${partitionDef.group}/${partitionDef.partitionId.stripSuffix("/")}/events-${AppProperties.config.node_hash}-${partitionDef.timeCreatedInMillis.toString}"""
+          val identifier = s"""${AppProperties.config.eventStorageSubFolder.stripSuffix("/")}/${partitionDef.group}/${partitionDef.partitionId.stripSuffix("/")}/events-${AppProperties.config.node_hash}-${partitionDef.timeCreatedInMillis.toString}.json"""
           writer.write(flushContent, identifier)
         }),
         onFalse = ZIO.succeed(Right(()))
@@ -90,9 +94,9 @@ object Queueing {
                                     partitionDef: PartitionDef,
                                     writer: Writer[String, String, _]) extends BaseStringFlushingStore[TRef[String], JsObject](
     ref,
-    (ref, str) => STM.atomically(ref.update(oldStr => if (oldStr.isEmpty) str else oldStr + s"\n$str").map(_ => true)),
+    (tRef, str) => STM.atomically(tRef.update(oldStr => if (oldStr.isEmpty) str else oldStr + s"\n$str").map(_ => true)),
     x => x.toString(),
-    ref => STM.atomically(ref.get),
+    tRef => STM.atomically(tRef.get),
     partitionDef,
     writer
   )

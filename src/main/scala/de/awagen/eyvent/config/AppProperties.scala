@@ -100,6 +100,9 @@ object AppProperties {
     val structDefSubFolder: String = baseConfig.getString("eyvent.events.structDefSubFolder")
     val eventStorageSubFolder: String = baseConfig.getString("eyvent.events.eventStorageSubFolder")
 
+    val eventFileMaxFileSizeInMB: Int = baseConfig.getInt("eyvent.events.stores.maxFileSizeInMB")
+    val eventFileMaxNumberOfEvents: Int = baseConfig.getInt("eyvent.events.stores.maxNumberOfEvents")
+
     // mapping of endpoint ids to files providing the struct def defining the
     // format of accepted events.
     // Note that the struct def file with the given name is to be found within

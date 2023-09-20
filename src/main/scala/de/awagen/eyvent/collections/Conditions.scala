@@ -9,7 +9,7 @@ object Conditions {
 
 
   def numericCondition[A, B](cond: B => Boolean, key: String)(implicit ev: Numeric[B]): Condition[A] = {
-    map => map.get(key).exists(x => cond(x.value.asInstanceOf[B]))
+    map => map.get(key).exists(x => cond(x.value().asInstanceOf[B]))
   }
 
   def doubleGEQCondition[A](limit: Double, key: String): Condition[A] = {

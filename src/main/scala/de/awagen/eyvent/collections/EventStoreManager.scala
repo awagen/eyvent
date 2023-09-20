@@ -18,23 +18,23 @@ import zio.{Schedule, Task, ZIO, durationInt}
  * the old reference was picked someone and events are still coming in.
  *
  * @param fromTimeInMillisFolderPartitioning - partitioning to apply to each message to determine where to write the data (e.g represented by the directory where to store the event store content)
- * @param map - Map to map current partitioning to the actual event store
- * @param groupToPartitionDef - mapping of group to the currently used PartitionDef
- * @param rollStoreCondition - providing predicate that determines whether rolling a particular store (e.g represented by a file)
- * @param toBeFlushed  - Ref to Seq of queues waiting to be flushed (or to be removed if empty)
- * @param writer       -  writer used to persist the log files
+ * @param map                                - Map to map current partitioning to the actual event store
+ * @param groupToPartitionDef                - mapping of group to the currently used PartitionDef
+ * @param rollStoreCondition                 - providing predicate that determines whether rolling a particular store (e.g represented by a file)
+ * @param toBeFlushed                        - Ref to Seq of queues waiting to be flushed (or to be removed if empty)
+ * @param writer                             -  writer used to persist the log files
  *
- *                     Two scenarios:
+ *                                           Two scenarios:
  *                     - due to natural progression of partitions, no new events will come in for the FlushingStore for certain partitions
  *                     - criteria indicate we need to flush the given flushing store and provide a new store
  *
  *                     Two types of "rolling":
  *                     - one being the base partition of an event (e.g mainly based on time) determining the base folder
- *                     (this one needs checking basically on each event or each N events)
+ *                       (this one needs checking basically on each event or each N events)
  *                     - the file-partitioning, e.g rolling files within that directory
  *
  * NOTE: after creating the QueueManager instance need to call the init() method, otherwise
- * we will not get a regular replacement and flushing of stores for which no new events flow in
+ *                                           we will not get a regular replacement and flushing of stores for which no new events flow in
  *
  */
 case class EventStoreManager(fromTimeInMillisFolderPartitioning: Partitioning[Long],
@@ -120,8 +120,9 @@ case class EventStoreManager(fromTimeInMillisFolderPartitioning: Partitioning[Lo
    * - groupId -> PartitionDef
    * - PartitionDef -> FlushingStore
    */
-  private[collections] def checkNeedsFlushingForAllStores: ZIO[Any, Throwable, Unit] = {
+  def checkNeedsFlushingForAllStores: ZIO[Any, Throwable, Unit] = {
     for {
+      _ <- ZIO.logDebug("flush check")
       allKnownGroups <- STM.atomically(groupToPartitionDef.get.map(x => x.keySet))
       _ <- ZStream.from(allKnownGroups)
         .mapZIO(group => {
@@ -129,7 +130,10 @@ case class EventStoreManager(fromTimeInMillisFolderPartitioning: Partitioning[Lo
         })
         .filter(x => x.nonEmpty)
         .map(x => x.get)
-        .mapZIO(store => store.flush.schedule(Schedule.fixed(10 seconds) && Schedule.once))
+        .mapZIO(store => {
+          ZIO.logInfo("Schedules store for flushing") *>
+            store.flush.schedule(Schedule.fixed(10 seconds) && Schedule.once)
+        })
         .runDrain
     } yield ()
   }
@@ -138,16 +142,29 @@ case class EventStoreManager(fromTimeInMillisFolderPartitioning: Partitioning[Lo
    * Handling a single event for a given group.
    * Ensures we have the right partitioning set and then adds the event to the correct store.
    */
-  def offer(event: JsObject, group: String): Task[Unit] = {
+  def offer(event: JsObject, group: String): ZIO[Any, Serializable, Unit] = {
+    val flushSchedule = Schedule.fixed(10 seconds)
     for {
-      _ <- STM.atomically(handlePartitioningForEvent(group))
+      // check if we need to flush some store
+      needsFlushingScheduleOpt <- STM.atomically(handlePartitioningForEvent(group))
+      _ <- ZIO.logInfo(s"Need to flush store?: ${needsFlushingScheduleOpt.nonEmpty}")
+      // if so, flush
+      _ <- ZIO.fromOption(needsFlushingScheduleOpt).forEachZIO(store => store.flush.schedule(flushSchedule && Schedule.once).forkDaemon)
+        .ignore
       partitionDef <- STM.atomically(groupToPartitionDef.get.map(x => x(group)))
-      _ <- STM.atomically(map.get.map(x => x.get(partitionDef).map(store => store.offer(event))))
+      _ <- ZIO.logDebug(s"PartitionDef for group '$group': $partitionDef")
+      store <- STM.atomically(map.get.map(x => x.get(partitionDef))).map(x => x.get)
+      _ <- ZIO.logDebug(s"Store for group '$group': $store")
+      _ <- ZIO.logDebug(s"Measure for group '$group': ${store.measures}")
+      _ <- store.offer(event)
+      storesToBeFlushed <- STM.atomically(toBeFlushed.get)
+      _ <- ZIO.logInfo(s"Stores to be flushed: $storesToBeFlushed")
     } yield ()
   }
 
-  def init(): Task[Unit] = {
-    checkNeedsFlushingForAllStores.schedule(Schedule.fixed(10 seconds)).map(x => ())
+  def init() = {
+    val flushCheckSchedule = Schedule.fixed(10 seconds)
+    checkNeedsFlushingForAllStores.repeat(flushCheckSchedule)
   }
 
 }
