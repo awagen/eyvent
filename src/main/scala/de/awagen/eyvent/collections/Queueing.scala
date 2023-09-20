@@ -5,8 +5,9 @@ import de.awagen.eyvent.config.AppProperties
 import de.awagen.eyvent.config.NamingPatterns.PartitionDef
 import de.awagen.kolibri.storage.io.writer.Writers.Writer
 import spray.json.JsObject
+import zio.stm.{STM, TRef}
 import zio.stream.ZStream
-import zio.{Ref, Task, UIO, ZIO}
+import zio.{Task, UIO, ZIO}
 
 object Queueing {
 
@@ -81,13 +82,13 @@ object Queueing {
     writer
   )
 
-  case class StringRefFlushingStore(ref: Ref[String],
+  case class StringRefFlushingStore(ref: TRef[String],
                                     partitionDef: PartitionDef,
-                                    writer: Writer[String, String, _]) extends BaseStringFlushingStore[Ref[String], JsObject](
+                                    writer: Writer[String, String, _]) extends BaseStringFlushingStore[TRef[String], JsObject](
     ref,
-    (ref, str) => ref.update(oldStr => if (oldStr.isEmpty) str else oldStr + s"\n$str").map(_ => true),
+    (ref, str) => STM.atomically(ref.update(oldStr => if (oldStr.isEmpty) str else oldStr + s"\n$str").map(_ => true)),
     x => x.toString(),
-    ref => ref.get,
+    ref => STM.atomically(ref.get),
     partitionDef,
     writer
   )
