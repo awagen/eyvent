@@ -24,7 +24,7 @@ import de.awagen.kolibri.storage.io.writer.Writers.Writer
 import spray.json.JsObject
 import zio.stm.{STM, TRef, ZSTM}
 import zio.stream.ZStream
-import zio.{Schedule, ZIO, durationInt}
+import zio.{Schedule, Task, ZIO, durationInt}
 
 /**
  * Keep track of created stores, one per group and partitioning.
@@ -170,6 +170,16 @@ case class EventStoreManager(fromTimeInMillisFolderPartitioning: Partitioning[Lo
       partitionDef <- STM.atomically(groupToPartitionDef.get.map(x => x(group)))
       store <- STM.atomically(map.get.map(x => x.get(partitionDef))).map(x => x.get)
       _ <- store.offer(event)
+    } yield ()
+  }
+
+  /**
+   * To be used only in special cases, such as jvm exit, to make sure we do not use events
+   */
+  def flushAllStores: Task[Unit] = {
+    for {
+      allStores <- STM.atomically(map.get.map(x => x.values))
+      _ <- ZStream.fromIterable(allStores).foreach(store => store.flush)
     } yield ()
   }
 

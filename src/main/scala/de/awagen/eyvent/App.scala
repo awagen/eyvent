@@ -36,7 +36,7 @@ import zio.metrics.connectors.{MetricsConfig, prometheus}
 import zio.metrics.jvm.DefaultJvmMetrics
 import zio.stm.{STM, TRef}
 import zio.stream.ZStream
-import zio.{Executor, Runtime, Schedule, Scope, ZIO, ZIOAppArgs, ZIOAppDefault, ZLayer, durationInt}
+import zio.{Executor, Ref, Runtime, Scope, ZIO, ZIOAppArgs, ZIOAppDefault, ZLayer, durationInt}
 
 import java.util.concurrent.Executors
 
@@ -89,13 +89,21 @@ object App extends ZIOAppDefault {
     } yield eventStoreManager
   }
 
+  private[this] var eventStoresManagers: Ref[Seq[EventStoreManager]] = _
+
   override def run: ZIO[Any with ZIOAppArgs with Scope, Any, Any] = {
-    val flushCheckSchedule = Schedule.fixed(10 seconds)
     val effect = for {
       _ <- ZIO.logInfo("Application started!")
       reader <- ZIO.service[Reader[String, Seq[String]]]
       writer <- ZIO.service[Writer[String, String, _]]
       _ <- ZIO.logInfo("Loading event endpoints")
+
+      // setting up storage of EventStoreManagers such that we can flush all
+      // stores when app terminates
+      eventStoreMngmtRef <- Ref.make[Seq[EventStoreManager]](Seq.empty)
+      _ <- ZIO.attempt({
+        eventStoresManagers = eventStoreMngmtRef
+      })
 
       usedEndpoints <- ZStream.fromIterable(eventEndpointToStructDefMapping.toSeq)
         .mapZIO(x => {
@@ -103,6 +111,7 @@ object App extends ZIOAppDefault {
             structDef <- ZIO.attempt(reader.read(s"$structDefSubFolder/${x._2}").mkString("\n").parseJson.convertTo[StructDef[Any]].asInstanceOf[NestedStructDef[Any]])
             eventStoreManager <- createEventStoreManager(writer)
             _ <- eventStoreManager.init()
+            _ <- eventStoresManagers.update(x => x :+ eventStoreManager)
             endpoint <- ZIO.attempt(eventEndpoint(x._1, structDef, eventStoreManager))
           } yield endpoint
         }).runCollect
@@ -115,6 +124,19 @@ object App extends ZIOAppDefault {
       _ <- ZIO.logInfo("Application is about to exit!")
     } yield ()
     effect.provide(Server.defaultWithPort(http_server_port) >+> combinedLayer)
+      // try to flush all remaining data before shutting down
+      .onExit(_ => {
+        for {
+          _ <- ZIO.logInfo("Starting Exit Sequence")
+          managers <- eventStoresManagers.get
+          _ <- (ZIO.attempt(managers.nonEmpty) && ZIO.logInfo(s"Persisting '${managers.size}' remaining stores before closing down").map(_ => true)).ignore
+          _ <- ZStream.fromIterable(managers)
+            .mapZIO(mng => mng.flushAllStores.ignore)
+            .runDrain
+            .ignore
+          _ <- ZIO.logInfo("Completed Exit Sequence")
+        } yield ()
+      })
   }
 
 }
