@@ -17,7 +17,7 @@
 
 package de.awagen.eyvent
 
-import de.awagen.eyvent.collections.Queueing.{FlushingStore, MEMORY_SIZE_IN_MB_MEASURE_ID, NUM_ELEMENTS_MEASURE_ID}
+import de.awagen.eyvent.collections.EventStores.{FlushingStore, MEMORY_SIZE_IN_MB_MEASURE_ID, NUM_ELEMENTS_MEASURE_ID}
 import de.awagen.eyvent.collections.{Conditions, EventStoreManager}
 import de.awagen.eyvent.config.AppProperties.config._
 import de.awagen.eyvent.config.NamingPatterns.PartitionDef

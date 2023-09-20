@@ -18,13 +18,13 @@
 package de.awagen.eyvent.collections
 
 import de.awagen.eyvent.collections.Conditions.Condition
-import de.awagen.eyvent.collections.Queueing.{FlushingStore, StringRefFlushingStore}
+import de.awagen.eyvent.collections.EventStores.{FlushingStore, StringRefFlushingStore}
 import de.awagen.eyvent.config.NamingPatterns.{PartitionDef, Partitioning}
 import de.awagen.kolibri.storage.io.writer.Writers.Writer
 import spray.json.JsObject
 import zio.stm.{STM, TRef, ZSTM}
 import zio.stream.ZStream
-import zio.{Schedule, Task, ZIO, durationInt}
+import zio.{Schedule, ZIO, durationInt}
 
 /**
  * Keep track of created stores, one per group and partitioning.

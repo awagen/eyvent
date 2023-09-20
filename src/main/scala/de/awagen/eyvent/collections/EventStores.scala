@@ -26,7 +26,7 @@ import zio.stm.{STM, TRef}
 import zio.stream.ZStream
 import zio.{Task, UIO, ZIO}
 
-object Queueing {
+object EventStores {
 
   val MEMORY_SIZE_IN_MB_MEASURE_ID = "memorySizeInMB"
   val NUM_ELEMENTS_MEASURE_ID = "numElements"

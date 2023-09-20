@@ -27,9 +27,9 @@ import de.awagen.kolibri.datatypes.types.FieldDefinitions
 import de.awagen.kolibri.datatypes.types.JsonStructDefs.{NestedFieldSeqStructDef, NestedStructDef, StringConstantStructDef, StringStructDef}
 import spray.json.DefaultJsonProtocol._
 import spray.json._
+import zio.ZIO
 import zio.http.HttpAppMiddleware.cors
 import zio.http._
-import zio.{Task, ZIO}
 
 
 object EventEndpoints {
