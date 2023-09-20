@@ -22,12 +22,12 @@ services:
       HTTP_SERVER_PORT: 6001
       PERSISTENCE_MODE: 'LOCAL'
       # AWS_PROFILE: 'developer'
-      # AWS_S3_BUCKET: 'kolibri-dev'
-      # AWS_S3_PATH: 'kolibri_fleet_zio_test'
+      # AWS_S3_BUCKET: 'eyvent-dev'
+      # AWS_S3_PATH: 'eyvent_test'
       # AWS_S3_REGION: 'EU_CENTRAL_1'
       # GCP settings
       # PERSISTENCE_MODE: 'GCP'
-      # GOOGLE_APPLICATION_CREDENTIALS: '/home/kolibri/gcp/kolibri-credentials.json'
+      # GOOGLE_APPLICATION_CREDENTIALS: '/home/eyvent/gcp/eyvent-credentials.json'
       # GCP_GS_BUCKET: '[your-bucket-name]'
       # GCP_GS_PATH: '[your-bucket-base-path]'
       # GCP_GS_PROJECT_ID: '[your-project-id]'
@@ -46,7 +46,7 @@ services:
       - ./examples:/app/examples
       # mount only needed in case you want to use PERSISTENCE_MODE 'AWS' (adjust the mounted folder from local
       # to folder where credentials are located)
-      - ${HOME}/.aws/credentials:/home/kolibri/.aws/credentials:ro
+      #- ${HOME}/.aws/credentials:/home/eyvent/.aws/credentials:ro
       # mount only needed in case you want to use PERSISTENCE_MODE 'GCP' (adjust the mounted folder from local
       # to folder where credentials are located)
-      - ${HOME}/Clouds/gcp:/home/kolibri/gcp:ro
+      #- ${HOME}/Clouds/gcp:/home/eyvent/gcp:ro
