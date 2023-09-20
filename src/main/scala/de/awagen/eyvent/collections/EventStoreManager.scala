@@ -137,7 +137,7 @@ case class EventStoreManager(fromTimeInMillisFolderPartitioning: Partitioning[Lo
    * - groupId -> PartitionDef
    * - PartitionDef -> FlushingStore
    */
-  def checkNeedsFlushingForAllStores: ZIO[Any, Throwable, Unit] = {
+  private[collections] def checkNeedsFlushingForAllStores: ZIO[Any, Throwable, Unit] = {
     for {
       _ <- ZIO.logDebug("flush check")
       allKnownGroups <- STM.atomically(groupToPartitionDef.get.map(x => x.keySet))
@@ -148,8 +148,8 @@ case class EventStoreManager(fromTimeInMillisFolderPartitioning: Partitioning[Lo
         .filter(x => x.nonEmpty)
         .map(x => x.get)
         .mapZIO(store => {
-          ZIO.logInfo("Schedules store for flushing") *>
-            store.flush.schedule(Schedule.fixed(10 seconds) && Schedule.once)
+          ZIO.logDebug("Schedules store for flushing") *>
+            store.flush.schedule(Schedule.fixed(10 seconds) && Schedule.once).forkDaemon
         })
         .runDrain
     } yield ()
@@ -164,24 +164,24 @@ case class EventStoreManager(fromTimeInMillisFolderPartitioning: Partitioning[Lo
     for {
       // check if we need to flush some store
       needsFlushingScheduleOpt <- STM.atomically(handlePartitioningForEvent(group))
-      _ <- ZIO.logInfo(s"Need to flush store?: ${needsFlushingScheduleOpt.nonEmpty}")
       // if so, flush
       _ <- ZIO.fromOption(needsFlushingScheduleOpt).forEachZIO(store => store.flush.schedule(flushSchedule && Schedule.once).forkDaemon)
         .ignore
       partitionDef <- STM.atomically(groupToPartitionDef.get.map(x => x(group)))
-      _ <- ZIO.logDebug(s"PartitionDef for group '$group': $partitionDef")
       store <- STM.atomically(map.get.map(x => x.get(partitionDef))).map(x => x.get)
-      _ <- ZIO.logDebug(s"Store for group '$group': $store")
-      _ <- ZIO.logDebug(s"Measure for group '$group': ${store.measures}")
       _ <- store.offer(event)
       storesToBeFlushed <- STM.atomically(toBeFlushed.get)
-      _ <- ZIO.logInfo(s"Stores to be flushed: $storesToBeFlushed")
+      _ <- ZIO.ifZIO(ZIO.succeed(storesToBeFlushed.nonEmpty))(
+        onTrue = ZIO.logInfo(s"Stores to be flushed: $storesToBeFlushed"),
+        onFalse = ZIO.succeed(()))
     } yield ()
   }
 
-  def init() = {
+  def init(): ZIO[Any, Nothing, Unit] = {
     val flushCheckSchedule = Schedule.fixed(10 seconds)
-    checkNeedsFlushingForAllStores.repeat(flushCheckSchedule)
+    for {
+      _ <- checkNeedsFlushingForAllStores.repeat(flushCheckSchedule).forkDaemon
+    } yield ()
   }
 
 }

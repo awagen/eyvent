@@ -67,15 +67,12 @@ object EventStores {
     )
 
     override def offer(elements: ElementType*): Task[Unit] = for {
-      _ <- ZIO.logInfo(s"Elements offered to store: $elements")
-      _ <- ZIO.logInfo(s"Current partitioning: $partitionDef")
       _ <- ZStream.fromIterable(elements)
         .foreach(el => {
           val stringified = stringifier(el)
           addEffect(store, stringified) *>
             ZStream.fromIterable(measures.values).foreach(measure => ZIO.attempt(measure.update(stringified)))
         })
-      _ <- ZIO.logInfo(s"Current measures: ${this.measures}")
     } yield ()
 
     /**

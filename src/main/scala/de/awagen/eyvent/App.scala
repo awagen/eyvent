@@ -102,7 +102,7 @@ object App extends ZIOAppDefault {
           for {
             structDef <- ZIO.attempt(reader.read(s"$structDefSubFolder/${x._2}").mkString("\n").parseJson.convertTo[StructDef[Any]].asInstanceOf[NestedStructDef[Any]])
             eventStoreManager <- createEventStoreManager(writer)
-            _ <- eventStoreManager.checkNeedsFlushingForAllStores.repeat(flushCheckSchedule).forkDaemon
+            _ <- eventStoreManager.init()
             endpoint <- ZIO.attempt(eventEndpoint(x._1, structDef, eventStoreManager))
           } yield endpoint
         }).runCollect
