@@ -22,21 +22,27 @@ import de.awagen.eyvent.collections.{Conditions, EventStoreManager}
 import de.awagen.eyvent.config.AppProperties.config._
 import de.awagen.eyvent.config.NamingPatterns.PartitionDef
 import de.awagen.eyvent.config.di.ZioDIConfig
-import de.awagen.eyvent.config.{AppProperties, HttpConfig, NamingPatterns}
+import de.awagen.eyvent.config.{AppProperties, ConsumeMode, HttpConfig, NamingPatterns}
+import de.awagen.eyvent.consumer.EventConsumer
 import de.awagen.eyvent.endpoints.EventEndpoints._
 import de.awagen.eyvent.endpoints.MetricEndpoints
 import de.awagen.kolibri.datatypes.io.json.JsonStructDefsJsonProtocol.lazyJsonStructDefsFormat
 import de.awagen.kolibri.datatypes.types.JsonStructDefs.{NestedStructDef, StructDef}
-import de.awagen.kolibri.storage.io.reader.Reader
+import de.awagen.kolibri.storage.io.reader.{DataOverviewReader, Reader}
 import de.awagen.kolibri.storage.io.writer.Writers.Writer
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider
 import spray.json._
-import zio.http.Server
+import zio.aws.core.config.{AwsConfig, CommonAwsConfig}
+import zio.aws.core.httpclient.HttpClient
+import zio.aws.sqs.Sqs
+import zio.http.{Client, Server, ZClient}
 import zio.logging.backend.SLF4J
+import zio.metrics.connectors.prometheus.PrometheusPublisher
 import zio.metrics.connectors.{MetricsConfig, prometheus}
 import zio.metrics.jvm.DefaultJvmMetrics
 import zio.stm.{STM, TRef}
 import zio.stream.ZStream
-import zio.{Executor, Ref, Runtime, Scope, ZIO, ZIOAppArgs, ZIOAppDefault, ZLayer, durationInt}
+import zio.{Chunk, Executor, Ref, Runtime, Scope, ULayer, ZIO, ZIOAppArgs, ZIOAppDefault, ZLayer, durationInt}
 
 import java.util.concurrent.Executors
 
@@ -49,7 +55,22 @@ object App extends ZIOAppDefault {
     layer.asInstanceOf[ZLayer[Any, Nothing, Unit]]
   }
 
-  val combinedLayer = {
+  private def awsConfigLayer: ZLayer[Any, Throwable, AwsConfig] = {
+    val awsCommonConfigLayer: ULayer[CommonAwsConfig] = ZLayer.succeed(
+      CommonAwsConfig(
+        region = Some(AppProperties.config.awsSQSRegion),
+        credentialsProvider = DefaultCredentialsProvider.create(),
+        endpointOverride = None,
+        commonClientConfig = None
+      )
+    )
+    val combinedLayer: ZLayer[Any, Throwable, CommonAwsConfig with HttpClient] = awsCommonConfigLayer >+> zio.aws.netty.NettyHttpClient.default
+    combinedLayer >>> zio.aws.core.config.AwsConfig.configured()
+  }
+
+  private def sqsLayer: ZLayer[Any, Throwable, Sqs] = awsConfigLayer >>> zio.aws.sqs.Sqs.live
+
+  private val combinedLayer: ZLayer[Any, Throwable, ZClient.Config with Client with Writer[String, String, _] with Reader[String, Seq[String]] with DataOverviewReader with MetricsConfig with PrometheusPublisher with Unit] = {
     ZLayer.succeed(HttpConfig.clientConfig) >+>
       HttpConfig.liveHttpClientLayer >+>
       ZioDIConfig.writerLayer >+>
@@ -64,7 +85,7 @@ object App extends ZIOAppDefault {
       DefaultJvmMetrics.live.unit
   }
 
-  def createEventStoreManager(writer: Writer[String, String, _]) = {
+  private def createEventStoreManager(writer: Writer[String, String, _]): ZIO[Any, Throwable, EventStoreManager] = {
     for {
       map <- STM.atomically(TRef.make(Map.empty[PartitionDef, FlushingStore[JsObject]]))
       groupToPartitionDef <- STM.atomically(TRef.make(Map.empty[String, PartitionDef]))
@@ -91,11 +112,76 @@ object App extends ZIOAppDefault {
 
   private[this] var eventStoresManagers: Ref[Seq[EventStoreManager]] = _
 
+  case class EndpointAndStructDefID(endpoint: String, structDefId: String)
+
+  case class EndpointAndStructDef(endpoint: String, structDef: NestedStructDef[Any])
+
+  /**
+   * Setup the event store manager instances for each (endpointName, structDefName) combination
+   * @return
+   */
+  private def setupEventStoresManager: ZIO[Any with Reader[String, Seq[String]] with Writer[String, String, _], Throwable, Chunk[(EndpointAndStructDef, EventStoreManager)]] = {
+    for {
+      reader <- ZIO.service[Reader[String, Seq[String]]]
+      writer <- ZIO.service[Writer[String, String, _]]
+      usedEndpoints <- ZStream.fromIterable(eventEndpointToStructDefMapping.toSeq).map(x => EndpointAndStructDefID(x._1, x._2))
+        .mapZIO(x => {
+          for {
+            structDef <- ZIO.attempt(reader.read(s"$structDefSubFolder/${x.structDefId}").mkString("\n").parseJson.convertTo[StructDef[Any]].asInstanceOf[NestedStructDef[Any]])
+            eventStoreManager <- createEventStoreManager(writer)
+            _ <- eventStoreManager.init()
+            _ <- eventStoresManagers.update(x => x :+ eventStoreManager)
+          } yield (EndpointAndStructDef(x.endpoint, structDef), eventStoreManager)
+        }).runCollect
+      _ <- ZIO.logInfo("Loaded event endpoints")
+    } yield usedEndpoints
+  }
+
+  /**
+   * Use this to set up the http endpoints for the distinct event types
+   * @param endpointDefAndStoreManagerSeq
+   * @return
+   */
+  private def setAndServeEndpoints(endpointDefAndStoreManagerSeq: Seq[(EndpointAndStructDef, EventStoreManager)]): ZIO[Any with Reader[String, Seq[String]] with Writer[String, String, _] with PrometheusPublisher with Server, Throwable, Unit] = {
+    for {
+      httpEndpoints <- ZStream.fromIterable(endpointDefAndStoreManagerSeq).map(x => eventEndpoint(x._1.endpoint, x._1.structDef, x._2)).runCollect
+      _ <- zio.http.Server.serve(
+        httpEndpoints.foldLeft(MetricEndpoints.prometheusEndpoint)((oldEndpoints, newEndpoint) => {
+          oldEndpoints ++ newEndpoint
+        })
+      )
+    } yield ()
+  }
+
+  /**
+   * Use this in case consume mode is set to "AWS_SQS", in which case we dont need receiving http endpoints but
+   * the respective queue consumers.
+   * @param sqsUrl
+   * @param endpointDefAndStoreManagerSeq
+   * @param groupKey
+   * @return
+   */
+  private def setSqsConsumption(sqsUrl: String,
+                                endpointDefAndStoreManagerSeq: Seq[(EndpointAndStructDef, EventStoreManager)],
+                                groupKey: String): ZIO[Any, Throwable, Unit] = {
+    ZStream.fromIterable(endpointDefAndStoreManagerSeq)
+      .foreach(x => {
+        ZIO.attempt(EventConsumer.SqsConsumer(
+          url = sqsUrl,
+          typeOfEvent = x._1.endpoint,
+          eventStructDef = x._1.structDef,
+          groupKey = groupKey,
+          eventStoreManager = x._2,
+          waitTimeSeconds = AppProperties.config.awsSQSMaxWaitTimeSeconds,
+          maxNrMessages = AppProperties.config.awsSQSMaxNumRequestMessages
+        )).forEachZIO(consumer => consumer.start)
+      })
+      .provide(sqsLayer)
+  }
+
   override def run: ZIO[Any with ZIOAppArgs with Scope, Any, Any] = {
     val effect = for {
       _ <- ZIO.logInfo("Application started!")
-      reader <- ZIO.service[Reader[String, Seq[String]]]
-      writer <- ZIO.service[Writer[String, String, _]]
       _ <- ZIO.logInfo("Loading event endpoints")
 
       // setting up storage of EventStoreManagers such that we can flush all
@@ -105,22 +191,13 @@ object App extends ZIOAppDefault {
         eventStoresManagers = eventStoreMngmtRef
       })
 
-      usedEndpoints <- ZStream.fromIterable(eventEndpointToStructDefMapping.toSeq)
-        .mapZIO(x => {
-          for {
-            structDef <- ZIO.attempt(reader.read(s"$structDefSubFolder/${x._2}").mkString("\n").parseJson.convertTo[StructDef[Any]].asInstanceOf[NestedStructDef[Any]])
-            eventStoreManager <- createEventStoreManager(writer)
-            _ <- eventStoreManager.init()
-            _ <- eventStoresManagers.update(x => x :+ eventStoreManager)
-            endpoint <- ZIO.attempt(eventEndpoint(x._1, structDef, eventStoreManager))
-          } yield endpoint
-        }).runCollect
-      _ <- ZIO.logInfo("Loaded event endpoints")
-      _ <- zio.http.Server.serve(
-        usedEndpoints.foldLeft(MetricEndpoints.prometheusEndpoint)((oldEndpoints, newEndpoint) => {
-          oldEndpoints ++ newEndpoint
-        })
-      )
+      // here decide whether http endpoint is used for direct consumption or messages are pulled from a queue
+      endpointAndStructDefs <- setupEventStoresManager
+      _ <- ZIO.whenCase(AppProperties.config.consumeMode)({
+        case ConsumeMode.HTTP => setAndServeEndpoints(endpointAndStructDefs)
+        case ConsumeMode.AWS_SQS =>
+          setSqsConsumption(AppProperties.config.awsSQSQueueUrl, endpointAndStructDefs, AppProperties.config.awsSQSGroupKey)
+      })
       _ <- ZIO.logInfo("Application is about to exit!")
     } yield ()
     effect.provide(Server.defaultWithPort(http_server_port) >+> combinedLayer)
@@ -129,7 +206,7 @@ object App extends ZIOAppDefault {
         for {
           _ <- ZIO.logInfo("Starting Exit Sequence")
           managers <- eventStoresManagers.get
-          _ <- (ZIO.attempt(managers.nonEmpty) && ZIO.logInfo(s"Persisting '${managers.size}' remaining stores before closing down").map(_ => true)).ignore
+          _ <- (ZIO.attempt(managers.nonEmpty) && ZIO.logInfo(s"Persisting '${managers.size}' remaining stores before closing down").as(true)).ignore
           _ <- ZStream.fromIterable(managers)
             .mapZIO(mng => mng.flushAllStores.ignore)
             .runDrain

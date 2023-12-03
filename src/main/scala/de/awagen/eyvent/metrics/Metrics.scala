@@ -218,6 +218,21 @@ object Metrics {
         MetricLabel("contextPath", contextPath),
         MetricLabel("node", AppProperties.config.node_hash)
       )
+
+
+    def countConsumedSQSMessagesWithStatus(sqsUrl: String,
+                                           group: String,
+                                           msgType: String,
+                                           success: Boolean): Metric[Counter, Any, MetricState.Counter] =
+      Metric.counterInt(s"countConsumedSqsMessages").fromConst(1)
+        .tagged(
+          MetricLabel("sqsUrl", sqsUrl),
+          MetricLabel("success", success.toString),
+          MetricLabel("group", group),
+          MetricLabel("msgType", msgType),
+          MetricLabel("node", AppProperties.config.node_hash)
+        )
+
   }
 
 

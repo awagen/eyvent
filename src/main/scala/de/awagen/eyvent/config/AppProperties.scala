@@ -17,6 +17,7 @@
 
 package de.awagen.eyvent.config
 
+import software.amazon.awssdk.regions.Region
 import com.amazonaws.regions.Regions
 import com.typesafe.config.{Config, ConfigFactory}
 import de.awagen.eyvent.config.EnvVariableKeys.PROFILE
@@ -124,9 +125,27 @@ object AppProperties {
     // format of accepted events.
     // Note that the struct def file with the given name is to be found within
     // basePath/structDefSubFolder
-    val eventEndpointToStructDefMapping: Map[String, String] = baseConfig.getString("eyvent.events.eventEndpointToStructDefMapping")
+    val eventEndpointToStructDefMapping: Map[String, String] = baseConfig.getString("eyvent.sources.eventEndpointToStructDefMapping")
       .split(",").map(x => x.trim).grouped(2).map(x => (x.head, x.last)).toMap
 
+    // determines how events are retrieved, e.g via HTTP endpoint ("HTTP") or sqs queue ("AWS_SQS")
+    val consumeMode: ConsumeMode.Value = ConsumeMode.withName(baseConfig.getString("eyvent.sources.consumeMode"))
+
+    val awsSQSRegion: Region = safeGetString("eyvent.sources.sqs.region").getOrElse("") match {
+      case e if e.nonEmpty =>
+        Region.of(e)
+      case _ =>
+        null
+    }
+
+    // max number of messages requested from queue at any given time
+    val awsSQSMaxNumRequestMessages: Int = baseConfig.getInt("eyvent.sources.sqs.maxNumRequestMessages")
+    // max wait time between requesting new messages from queue
+    val awsSQSMaxWaitTimeSeconds: Int = baseConfig.getInt("eyvent.sources.sqs.maxWaitTimeSeconds")
+    // queue to consume the events from
+    val awsSQSQueueUrl: String = baseConfig.getString("eyvent.sources.sqs.queueUrl")
+    // the key within queue messages determining which group (/ instances / customers) the message belongs to
+    val awsSQSGroupKey: String = baseConfig.getString("eyvent.sources.sqs.groupKey")
   }
 
 }

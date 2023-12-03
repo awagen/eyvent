@@ -16,6 +16,8 @@ val zioConfigVersion = "4.0.0-RC14"
 val zioLoggingVersion = "2.1.12"
 val zioHttpVersion = "3.0.0-RC2"
 val zioMetricsConnectorsVersion = "2.0.8"
+val zioSQSVersion = "0.5.0"
+val zioAWSVersion = "7.21.15.2"
 val mockitoVersion = "3.2.10.0"
 val kolibriStorageVersion = "0.2.4"
 
@@ -132,6 +134,9 @@ val additionalDependencies = Seq(
   "dev.zio" %% "zio-logging-slf4j" % zioLoggingVersion,
   "dev.zio" %% "zio-http" % zioHttpVersion,
   "dev.zio" %% "zio-metrics-connectors" % zioMetricsConnectorsVersion,
+  "dev.zio" %% "zio-sqs" % zioSQSVersion,
+  "dev.zio" %% "zio-aws-core" % zioAWSVersion,
+  "dev.zio" %% "zio-aws-sqs" % zioAWSVersion,
   "dev.zio" %% "zio-test-sbt" % zioVersion % Test,
   "dev.zio" %% "zio-test-magnolia" % zioVersion % Test,
   "org.scalatestplus" %% "mockito-3-4" % mockitoVersion % Test,
